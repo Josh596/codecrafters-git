@@ -28,7 +28,7 @@ def cat_file(file_hash: str) -> str:
     # return output
 
 
-def hash_object(filepath: str):
+def hash_object(filepath: str, save=False):
     with open(filepath, "rb") as file:
         content = file.read().decode()
 
@@ -40,10 +40,11 @@ def hash_object(filepath: str):
 
         compressed_content = zlib.compress(data)
 
-    file_objects_dir = os.path.join(OBJECTS_DIR, sha_hash[:2])
-    os.mkdir(file_objects_dir)
-    with open(os.path.join(file_objects_dir, sha_hash[2:]), "+wb") as object_file:
-        object_file.write(compressed_content)
+    if save:
+        file_objects_dir = os.path.join(OBJECTS_DIR, sha_hash[:2])
+        os.mkdir(file_objects_dir)
+        with open(os.path.join(file_objects_dir, sha_hash[2:]), "+wb") as object_file:
+            object_file.write(compressed_content)
 
     return sha_hash
 
@@ -61,6 +62,8 @@ def main():
             print(cat_file(sys.argv[3]), end="")
     elif command == "hash-object":
         if sys.argv[2] == "-w":
+            print(hash_object(sys.argv[3], save=True), end="")
+        else:
             print(hash_object(sys.argv[3]), end="")
     else:
         raise RuntimeError(f"Unknown command #{command}")

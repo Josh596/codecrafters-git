@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import sys
 import zlib
 
@@ -26,6 +27,20 @@ def cat_file(file_hash: str) -> str:
     # decompress the file
     # split using \0, null byte
     # return output
+
+
+def ls_tree(tree_hash: str, names_only=True) -> str:
+    if not names_only:
+        raise NotImplementedError
+
+    with open(os.path.join(OBJECTS_DIR, tree_hash[:2], tree_hash[2:]), "rb") as file:
+        decompressed_content = zlib.decompress(file.read())
+        content = decompressed_content.split(b"\x00", maxsplit=1)[1]
+
+    # digit, space, (name), \0
+    names = re.findall(b"\d+ ([\d\w]+)\x00", content)
+
+    return {"names": [name.decode() for name in names]}
 
 
 def hash_object(filepath: str, save=False):
@@ -65,6 +80,9 @@ def main():
             print(hash_object(sys.argv[3], save=True), end="")
         else:
             print(hash_object(sys.argv[3]), end="")
+    elif command == "ls-tree":
+        if sys.argv[2] == "--name-only":
+            print(*ls_tree(sys.argv[3])["names"], sep="\n")
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

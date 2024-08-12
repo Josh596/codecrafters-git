@@ -3,6 +3,8 @@ import os
 import re
 import sys
 import zlib
+from binascii import unhexlify
+from pathlib import Path
 
 OBJECTS_DIR = ".git/objects"
 
@@ -43,7 +45,7 @@ def ls_tree(tree_hash: str, names_only=True) -> str:
     return {"names": [name.decode() for name in names]}
 
 
-def hash_object(filepath: str, save=False):
+def hash_object_blob(filepath: str, save=False):
     with open(filepath, "rb") as file:
         content = file.read().decode()
 
@@ -64,6 +66,87 @@ def hash_object(filepath: str, save=False):
     return sha_hash
 
 
+class Object:
+    def __init__(self, path: str):
+        self.path = path
+
+    def hash(self):
+        data = self.content()
+
+        sha_hash = hashlib.sha1(data).hexdigest()
+
+        return sha_hash
+
+    def write(self):
+        sha_hash = self.hash()
+        compressed_content = zlib.compress(self.content())
+
+        file_objects_dir = os.path.join(OBJECTS_DIR, sha_hash[:2])
+        os.mkdir(file_objects_dir)
+        with open(os.path.join(file_objects_dir, sha_hash[2:]), "+wb") as object_file:
+            object_file.write(compressed_content)
+
+        return sha_hash
+
+    def content(self):
+        raise NotImplementedError
+
+    def mode(self):
+        raise NotImplementedError
+
+
+class Blob(Object):
+
+    def content(self):
+        with open(self.path, "rb") as file:
+            content = file.read().decode()
+
+            size = len(content)
+
+            data = f"blob {size}\0{content}".encode("utf-8")
+
+            return data
+
+    def mode(self):
+        return "100644"
+
+
+class Tree(Object):
+
+    def get_object_from_path(self, path) -> Object:
+        if Path(path).is_dir():
+            return Tree(path)
+        else:
+            return Blob(path)
+
+    def content(self):
+        entries = []
+
+        for path in sorted(os.listdir(self.path)):
+            entry_path = os.path.join(self.path, path)
+
+            if ".git" in str(entry_path):
+                continue
+
+            object = self.get_object_from_path(entry_path)
+
+            data = (
+                f"{object.mode()} {os.path.basename(object.path)}\0".encode()
+                + bytes.fromhex(object.hash())
+            )
+
+            entries.append(data)
+
+        entries_str = b"".join(entries)
+        size = len(entries_str)
+
+        content = f"tree {size}\0".encode() + entries_str
+        return content
+
+    def mode(self):
+        return "40000"
+
+
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
 
@@ -77,12 +160,14 @@ def main():
             print(cat_file(sys.argv[3]), end="")
     elif command == "hash-object":
         if sys.argv[2] == "-w":
-            print(hash_object(sys.argv[3], save=True), end="")
+            print(hash_object_blob(sys.argv[3], save=True), end="")
         else:
-            print(hash_object(sys.argv[3]), end="")
+            print(hash_object_blob(sys.argv[3]), end="")
     elif command == "ls-tree":
         if sys.argv[2] == "--name-only":
             print(*ls_tree(sys.argv[3])["names"], sep="\n")
+    elif command == "write-tree":
+        print(Tree("./").write())
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

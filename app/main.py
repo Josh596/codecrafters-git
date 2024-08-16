@@ -5,6 +5,7 @@ import sys
 import zlib
 from binascii import unhexlify
 from pathlib import Path
+from typing import Optional
 
 OBJECTS_DIR = ".git/objects"
 
@@ -66,10 +67,13 @@ def hash_object_blob(filepath: str, save=False):
     return sha_hash
 
 
-class Object:
-    def __init__(self, path: str):
-        self.path = path
+def commit_tree(tree_sha, parent_sha) -> str:
+    # Create commit tree object
+    # Save
+    pass
 
+
+class BaseObject:
     def hash(self):
         data = self.content()
 
@@ -90,6 +94,11 @@ class Object:
 
     def content(self):
         raise NotImplementedError
+
+
+class Object(BaseObject):
+    def __init__(self, path: str):
+        self.path = path
 
     def mode(self):
         raise NotImplementedError
@@ -147,6 +156,31 @@ class Tree(Object):
         return "40000"
 
 
+class CommitTree(Object):
+    def __init__(
+        self, tree_sha: str, parent_sha: Optional[str] = None, commit_message: str = ""
+    ):
+        self._tree_sha = tree_sha
+        self._parent_sha = parent_sha
+        self._commit_message = commit_message
+
+    def content(self):
+        author_name = "Josh596"
+        email = "randomemail@users.noreply.githubcom"
+        timestamp = "1723506942"
+        timezone = "+0100"
+
+        tree = f"tree {self._tree_sha}"
+        parent = f"parent {self._parent_sha}" if self._parent_sha else ""
+        author = f"{author_name} <{email}> {timestamp} {timezone}"
+        commiter = f"{author_name} <{email}>  {timestamp} {timezone}\n\n{self._commit_message}\n"
+
+        data = f"{tree}\n{parent}\n{author}\n{commiter}"
+        content = f"commit {len(data)}\0{data}".encode()
+
+        return content
+
+
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
 
@@ -168,6 +202,12 @@ def main():
             print(*ls_tree(sys.argv[3])["names"], sep="\n")
     elif command == "write-tree":
         print(Tree("./").write())
+
+    elif command == "commit-tree":
+        tree_sha = sys.argv[2]
+        parent_sha = sys.argv[4]
+        commit_message = sys.argv[6]
+        print(CommitTree(tree_sha, parent_sha, commit_message).write())
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

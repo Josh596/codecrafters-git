@@ -208,6 +208,8 @@ def main():
         parent_sha = sys.argv[4]
         commit_message = sys.argv[6]
         print(CommitTree(tree_sha, parent_sha, commit_message).write())
+    elif command == "clone":
+        pass
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

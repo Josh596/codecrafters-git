@@ -236,14 +236,31 @@ def get_pack(git_url: str, dir: str):
             print("Failed to get packfile:", r.status_code, r.text)
 
 
-@dataclass
+def get_bit(byte: int, position: int):
+    return (byte >> (7 - position)) & 1
+
+
 class GitObject:
-    content: str
-    index: int
-    length: int
+
+    def __init__(
+        self,
+        full_content: bytes,
+        content: bytes,
+        index: int,
+        length: int,
+        object_type: str = "",
+    ):
+        self.full_content = full_content
+        self.content = content
+        self.index = index
+        self.length = length
+        self.object_type = object_type
 
     def hash(self):
-        return hashlib.sha1(self.content).hexdigest()
+
+        header = f"{self.object_type} {len(self.content)}\0"
+        sha1_hash = hashlib.sha1(header.encode() + self.content).hexdigest()
+        return sha1_hash
 
 
 class ObjectType(enum.Enum):
@@ -290,24 +307,148 @@ class ObjectType(enum.Enum):
 
 
 class Commit(GitObject):
+    def __init__(
+        self,
+        full_content: str,
+        content: str,
+        index: int,
+        length: int,
+    ):
+        super().__init__(full_content, content, index, length, "commit")
+
     pass
 
 
 class Tree(GitObject):
+    def __init__(
+        self,
+        full_content: str,
+        content: str,
+        index: int,
+        length: int,
+    ):
+        super().__init__(full_content, content, index, length, "tree")
+
     pass
 
 
 class Blob(GitObject):
+    def __init__(
+        self,
+        full_content: str,
+        content: str,
+        index: int,
+        length: int,
+    ):
+        super().__init__(full_content, content, index, length, "blob")
+
     pass
 
 
 class Tag(GitObject):
-    pass
+    def __init__(
+        self,
+        full_content: str,
+        content: str,
+        index: int,
+        length: int,
+    ):
+        super().__init__(full_content, content, index, length, "tag")
 
 
 @dataclass
 class GitRef(GitObject):
-    base_object: GitObject
+    def __init__(
+        self,
+        full_content: bytes,
+        content: bytes,
+        index: int,
+        length: int,
+        base_object: GitObject,
+    ):
+        super().__init__(full_content, content, index, length, "ref")
+        self.base_object = base_object
+        self._content = content
+        self.object_type = self.base_object.object_type
+
+    @property
+    def content(self):
+        # source_length_bytes, tells us the length of the variable_length_integer, source_length tells us it's value
+        source_length_bytes, source_length = get_length(self._content)
+        target_length_in_bytes, target_length = get_length(
+            self._content[source_length_bytes:]
+        )
+
+        data = self.full_content[source_length_bytes + target_length_in_bytes :]
+
+        output = b""
+        while data:
+            # Copy instruction
+            """
+            Last four bits determine the offset
+            """
+            # Get instrustion
+            if data[0] < 128:
+                # Insert operation
+
+                output += data[1 : data[0]]
+                data = data[1 + data[0] :]
+            else:
+                # Las
+                # Copy operation
+                instruction = data[0]
+
+                # Get offset
+                index = 1
+                offset = ""
+                length = ""
+                for i in range(4, 8):
+                    if get_bit(instruction, i):
+                        value = data[index]
+                        index += 1
+                    else:
+                        value = 0
+
+                    offset = format(value, "08b") + offset
+
+                # Get length
+                for i in range(1, 4):
+                    if get_bit(instruction, i):
+                        value = data[index]
+                    else:
+                        value = 0
+
+                    length = format(value, "08b") + length
+
+                offset = int(offset, 2)
+                length = int(length, 2)
+
+                output += self.base_object.content[offset : offset + length]
+
+                data = data[index:]
+
+        return output
+        pass
+
+    @content.setter
+    def content(self, content: str):
+        self._content = content
+
+
+def get_length(data):
+    length_bytes = []
+    # Get the length, type and compressed data
+    for index, byte_ in enumerate(data):
+        mask = 0b1111111
+        length_bytes.append(byte_ & mask)
+        if byte_ < 128:  # so MSB is not set
+            break
+
+    length_bytes_reversed = reversed(length_bytes)
+    length_bits = "".join(format(digit, "b") for digit in length_bytes_reversed)
+    length_object = int(length_bits, 2)
+
+    return len(length_bytes), length_object
 
 
 def unpack_pack_file(location: str):
@@ -366,11 +507,14 @@ def unpack_pack_file(location: str):
 
             if object_type not in [ObjectType.REF_DELTA, ObjectType.OFS_DELTA]:
                 # Decompress content
-                content = zlib.decompress(content)
+                decompress_content = zlib.decompress(content)
 
-                data_length = len(zlib.compress(content))
+                data_length = len(
+                    zlib.compress(decompress_content)
+                )  # Compressed data length
 
-                # print(length_bytes, data_length)
+                total_length = len(length_bytes) + data_length
+                full_content = unread_data[:total_length]
                 unread_data = unread_data[len(length_bytes) + data_length :]
 
                 if not objects:
@@ -379,13 +523,17 @@ def unpack_pack_file(location: str):
                     index = objects[-1].index + objects[-1].length
                 objects.append(
                     object_type.create_object()(
-                        content=content, index=index, length=data_length
+                        content=decompress_content,
+                        index=index,
+                        length=data_length,
+                        full_content=full_content,
                     )
                 )
             else:
                 # DELTIFIED VERSIONS
                 if object_type == ObjectType.REF_DELTA:
                     name_base_object = content[:20].hex()
+                    print(name_base_object)
                     content = content[20:]
 
                     # Decompress content
@@ -394,20 +542,27 @@ def unpack_pack_file(location: str):
                     data_length = len(zlib.compress(content))
 
                     # print(length_bytes, data_length)
-                    unread_data = unread_data[len(length_bytes) + data_length + 20 :]
+                    total_length = len(length_bytes) + data_length + 20
+                    full_content = unread_data[:total_length]
+                    unread_data = unread_data[total_length:]
 
                     # Get parent object
                     for object in objects:
+                        print("\n==================Objects===================")
                         if object.hash() == name_base_object:
+                            print(object.hash())
                             index = objects[-1].index + objects[-1].length
+                            print("Hash found")
                             objects.append(
                                 object_type.create_object()(
                                     content=content,
                                     base_object=object,
                                     index=index,
                                     length=data_length,
+                                    full_content=full_content,
                                 )
                             )
+                            break
 
                 if object_type == ObjectType.OFS_DELTA:
                     print("OFS")
@@ -436,9 +591,9 @@ def unpack_pack_file(location: str):
                     content = zlib.decompress(content)
 
                     data_length = len(zlib.compress(content))
-
+                    total_length = len(length_bytes) + data_length + len(offset_bytes)
                     # print(length_bytes, data_length)
-
+                    full_content = unread_data[:total_length]
                     for object in objects:
                         if object.index == base_object_index:
                             objects.append(
@@ -447,18 +602,17 @@ def unpack_pack_file(location: str):
                                     base_object=object,
                                     index=index,
                                     length=data_length,
+                                    full_content=full_content,
                                 )
                             )
 
-                    unread_data = unread_data[
-                        len(length_bytes) + data_length + len(offset_bytes) :
-                    ]
+                    unread_data = unread_data[total_length:]
                     pass
 
             # TODO: HANDLE DELTIFIED OBJECT
             pass
 
-    print("All objects", len(objects), [type(object) for object in objects])
+    print("All objects", len(objects), [object.object_type for object in objects])
     # For each object in no_objects
     # Get the length
     # Get the data
@@ -479,4 +633,5 @@ def clone(git_url: str, location: str):
 
 
 if __name__ == "__main__":
+    # TODO: ADD A FULL CONTENT FIELD TO GITOBJECT, CONTAINING THE FULL OBJECT[length, data, etc.] That is what I used to calculate hash
     clone(TEST_GIT_URL, ".")

@@ -5,7 +5,9 @@ import sys
 import zlib
 from binascii import unhexlify
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
+
+from clone.main import clone
 
 OBJECTS_DIR = ".git/objects"
 
@@ -32,7 +34,7 @@ def cat_file(file_hash: str) -> str:
     # return output
 
 
-def ls_tree(tree_hash: str, names_only=True) -> str:
+def ls_tree(tree_hash: str, names_only=True) -> Dict[str, List[str]]:
     if not names_only:
         raise NotImplementedError
 
@@ -41,7 +43,7 @@ def ls_tree(tree_hash: str, names_only=True) -> str:
         content = decompressed_content.split(b"\x00", maxsplit=1)[1]
 
     # digit, space, (name), \0
-    names = re.findall(b"\d+ ([\d\w]+)\x00", content)
+    names = re.findall(rb"\d+ ([\d\w]+)\x00", content)
 
     return {"names": [name.decode() for name in names]}
 
@@ -65,12 +67,6 @@ def hash_object_blob(filepath: str, save=False):
             object_file.write(compressed_content)
 
     return sha_hash
-
-
-def commit_tree(tree_sha, parent_sha) -> str:
-    # Create commit tree object
-    # Save
-    pass
 
 
 class BaseObject:
@@ -209,7 +205,8 @@ def main():
         commit_message = sys.argv[6]
         print(CommitTree(tree_sha, parent_sha, commit_message).write())
     elif command == "clone":
-        pass
+        TEST_GIT_URL = "https://github.com/Josh596/Weather-App.git"
+        clone(TEST_GIT_URL, "/Users/Josh/Desktop/Personal-Projects/git_test")
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

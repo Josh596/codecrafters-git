@@ -154,6 +154,7 @@ def get_pack(git_url: str, dir: str):
             init(parent_dir=dir)
             os.mkdir(os.path.join(dir, ".git", "objects", "pack"))
             location = os.path.join(dir, ".git", "objects", "pack", "pack.pack")
+            output = []
             with open(location, "wb+") as pack_file:
                 leftover = b""
                 acknowledgement = b""
@@ -166,11 +167,17 @@ def get_pack(git_url: str, dir: str):
                         break
 
                     while chunk:
+                        print("Reading chunk")
                         # Not enough data to get length, save for next_iteration, or exit, not sure
                         if len(chunk) < 4:
                             leftover = chunk
                             break
-                        packet_length = int(chunk[:4], 16)
+                        try:
+                            packet_length = int(chunk[:4], 16)
+                        except Exception as e:
+                            print(chunk)
+                            # print(output[-1]) if output else ""
+                            raise e
 
                         if packet_length == 0:
                             leftover = b""
@@ -179,11 +186,12 @@ def get_pack(git_url: str, dir: str):
                         if len(chunk) < packet_length:
                             leftover = chunk
                             break
-
+                        # THIS IS DATA -  without SIDEBAND
+                        # I think this should range from 5: packet_length-5
                         data: bytes = chunk[5:packet_length]
                         if not acknowledgement:
                             data = chunk[4:packet_length]
-                            leftover = data[packet_length:]
+                            leftover = chunk[packet_length:]
                             acknowledgement = data
                             break
 
@@ -191,6 +199,7 @@ def get_pack(git_url: str, dir: str):
 
                         if sideband == 1:
                             pack_file.write(data)
+
                         elif sideband == 2:
                             logging.info(
                                 f"Progesss: {data.decode('utf-8')}",
@@ -201,6 +210,7 @@ def get_pack(git_url: str, dir: str):
                             )
                             error_occured = True
                             break
+                        output.append(data)
                         chunk = chunk[packet_length:]
             unpack_pack_file(location)
 

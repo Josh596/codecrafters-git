@@ -7,8 +7,7 @@ from .constants import OBJECTS_DIR
 def init(parent_dir):
     os.chdir(parent_dir)
     if os.path.exists(".git"):
-        shutil.rmtree(os.path.join(parent_dir, ".git"), ignore_errors=True)
-        # raise Exception("Directory is already a git repository")
+        raise Exception("Directory is already a git repository")
     os.mkdir(".git")
     os.mkdir(OBJECTS_DIR)
     os.mkdir(".git/refs")

@@ -7,7 +7,7 @@ from binascii import unhexlify
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from clone.main import clone
+from .clone.main import clone
 
 OBJECTS_DIR = ".git/objects"
 
@@ -205,8 +205,11 @@ def main():
         commit_message = sys.argv[6]
         print(CommitTree(tree_sha, parent_sha, commit_message).write())
     elif command == "clone":
+        git_url = sys.argv[2]
+        dir = sys.argv[3]
         TEST_GIT_URL = "https://github.com/Josh596/Weather-App.git"
-        clone(TEST_GIT_URL, "/Users/Josh/Desktop/Personal-Projects/git_test")
+        TEST_GIT_URL = "https://gitlab.com/beku.skrillex/jp_project.git"
+        clone(git_url, dir)
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

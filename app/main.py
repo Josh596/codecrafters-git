@@ -7,7 +7,7 @@ from binascii import unhexlify
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .clone.main import clone
+from clone.main import clone
 
 OBJECTS_DIR = ".git/objects"
 

@@ -4,21 +4,13 @@ Step 1: Discover refs
 Step 2: Negotiation bit, I really only need to send want requests. 
 """
 
-import enum
-import hashlib
 import logging
 import os
 import re
-import zlib
-from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple, Type
-from urllib.parse import urljoin
-
-import requests
-from typing_extensions import Self
+from typing import Dict, List
 
 from .get_packfile import discover_refs, get_pack, unpack_pack_file
-from .objects import GitObject, ObjectType
+from .objects import GitObject
 from .utils import convert_path_to_absolute
 
 TEST_GIT_URL = "https://github.com/Josh596/Weather-App.git"
@@ -107,11 +99,9 @@ def clone(git_url: str, location: str):
     git_url = convert_path_to_absolute(git_url)
     # Create .git folder, raise error if it already exist
     discover_refs(git_url, "git-upload-pack")
-    get_pack(git_url, location)
+    pack_location = get_pack(git_url, location)
     os.chdir(location)
-    objects = unpack_pack_file(
-        location="/Users/Josh/Desktop/Personal-Projects/git_test/.git/objects/pack/pack.pack"
-    )
+    objects = unpack_pack_file(pack_location)
     print(len(objects), "Object Length")
     save_objects(objects)
 

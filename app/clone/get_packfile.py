@@ -1,17 +1,20 @@
 import logging
 import os
 import shutil
+import urllib
+import urllib.error
+import urllib.parse
+import urllib.request
 import zlib
 from dataclasses import dataclass
-from optparse import Option
 from typing import List, Optional, Set, Tuple
 from urllib.parse import urljoin
 
-import requests
-from typing_extensions import Self
-
 from .objects import GitObject, ObjectType
 from .utils import get_length, init
+
+# import requests
+
 
 SUPPORTED_CAPABILITIES = [
     "side-band-64k",
@@ -95,10 +98,20 @@ def discover_refs(
     git_url: str, service: str = "git-upload-pack"
 ) -> Tuple[List[Ref], Set[str]]:
     url = urljoin(git_url, "info/refs")
-    r = requests.get(url=url, params={"service": service})
-    refs, capabilities = parse_refs_from_response(r.text, service)
+    params = urllib.parse.urlencode({"service": service})
+    full_url = f"{url}?{params}"
+    try:
+        with urllib.request.urlopen(full_url) as response:
+            if response.status == 200:
+                content = response.read().decode("utf-8")
+                refs, capabilities = parse_refs_from_response(content, service)
+                return refs, capabilities
+            else:
+                raise Exception(f"Request failed with status code: {response.status}")
 
-    return refs, capabilities
+    except urllib.error.URLError as e:
+        raise Exception(f"Error occurred: {e}")
+        # return None, None
 
 
 def get_pack(git_url: str, dir: str):
@@ -135,21 +148,18 @@ def get_pack(git_url: str, dir: str):
         yield "0000"
         yield "0009done\n"
 
-    s = requests.Session()
-
-    with s.post(
-        url,
-        data=data_gen(),  # noqa
-        stream=True,
-        allow_redirects=True,
-        headers={
-            "Content-Type": "application/x-git-upload-pack-request",
-            "Accept": "application/x-git-upload-pack-result",
-            "Connection": "keep-alive",
-        },
-    ) as r:
+    data = "".join(data_gen()).encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-git-upload-pack-request",
+        "Accept": "application/x-git-upload-pack-result",
+        "Connection": "keep-alive",
+        "Transfer-Encoding": "chunked",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    # s = requests.Session()
+    with urllib.request.urlopen(req) as response:
         # print(r.headers)
-        if r.status_code == 200:
+        if response.status == 200:
             error_occured = False
             init(parent_dir=dir)
             os.mkdir(os.path.join(dir, ".git", "objects", "pack"))
@@ -158,8 +168,12 @@ def get_pack(git_url: str, dir: str):
             with open(location, "wb+") as pack_file:
                 leftover = b""
                 acknowledgement = b""
-                for chunk in r.iter_content(65520, decode_unicode=False):
+                # for chunk in r.iter_content(65520, decode_unicode=False)
+                while True:
                     chunk: bytes
+                    chunk = response.read(65520)
+                    if not chunk:
+                        break
                     chunk = leftover + chunk
                     leftover = b""
                     if error_occured:
@@ -212,10 +226,12 @@ def get_pack(git_url: str, dir: str):
                             break
                         output.append(data)
                         chunk = chunk[packet_length:]
-            unpack_pack_file(location)
+            return location
 
         else:
-            print("Failed to get packfile:", r.status_code, r.text)
+            print("Failed to get packfile:", response.status, response.text)
+
+    raise Exception("Could not get pack file")
 
 
 def unpack_pack_file(location: str) -> List[GitObject]:

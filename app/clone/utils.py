@@ -1,5 +1,4 @@
 import os
-import shutil
 
 from .constants import OBJECTS_DIR
 

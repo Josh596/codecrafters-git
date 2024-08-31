@@ -1,6 +1,5 @@
 import enum
 import hashlib
-import logging
 import os
 import zlib
 from dataclasses import dataclass

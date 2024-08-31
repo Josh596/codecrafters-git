@@ -212,10 +212,12 @@ def get_pack(git_url: str, dir: str):
                             break
                         output.append(data)
                         chunk = chunk[packet_length:]
-            unpack_pack_file(location)
+            return location
 
         else:
             print("Failed to get packfile:", r.status_code, r.text)
+
+    raise Exception("Could not get packfile")
 
 
 def unpack_pack_file(location: str) -> List[GitObject]:

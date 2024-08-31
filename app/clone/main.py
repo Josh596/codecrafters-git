@@ -107,11 +107,9 @@ def clone(git_url: str, location: str):
     git_url = convert_path_to_absolute(git_url)
     # Create .git folder, raise error if it already exist
     discover_refs(git_url, "git-upload-pack")
-    get_pack(git_url, location)
+    pack_location = get_pack(git_url, location)
     os.chdir(location)
-    objects = unpack_pack_file(
-        location="/Users/Josh/Desktop/Personal-Projects/git_test/.git/objects/pack/pack.pack"
-    )
+    objects = unpack_pack_file(location=pack_location)
     print(len(objects), "Object Length")
     save_objects(objects)
 

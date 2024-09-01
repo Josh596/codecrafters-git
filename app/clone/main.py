@@ -21,62 +21,37 @@ logging.basicConfig(encoding="utf-8", level=logging.INFO)
 
 
 def get_objects_from_tree(content: bytes):
-    # print(content)
-    content = content.split(b"\x00", maxsplit=1)[1]
-    # return hash of each entry in tree
-    data = re.findall(rb"(\d+) (.+?)\x00(.{20})", content)
-    names = re.findall(rb"\d+ ([\d\w]+)\x00", content)
-
-    # print([name.decode() for name in names], "FIle names")
+    data = re.findall(rb"(\d+) (.+?)\x00(.{20})", content, re.DOTALL)
     return [(mode.decode(), name.decode(), hash.hex()) for mode, name, hash in data]
-    # return [hash.decode() for hash in hashes]
-
-
-# For each object in no_objects
-# Save each object
-# Get the length
-# Get the data
-
-"""
-Recursively loop through each entry in a Tree object, generating the paths for each blob recursively also
-
-
-Tree(path, content)
-    paths -> for object in tree [path + object.path if object = tree: hash]
-    
-    
-What if for each object, I just add a set_parent method. 
-Then I just construct the path 
-"""
 
 
 def save_objects(objects: List[GitObject]):
     hash_to_object: Dict[str, GitObject] = {}
 
     for git_object in objects:
-
         hash_to_object[git_object.hash()] = git_object
-        print(git_object.hash(), git_object)
 
-    print(hash_to_object.keys(), "Hashes")
     for git_object in objects:
+
         if git_object.object_type == "tree":
             for data in get_objects_from_tree(git_object.content):
                 file_mode, name, hash = data
-                print(file_mode, name, hash, sep="***")
                 obj = hash_to_object[hash]
                 obj.parent = git_object
                 obj.name = name
 
+    count = 0
     for git_object in objects:
+
         git_object.write()
-        print(
-            git_object.parent,
-            git_object.name,
-            git_object.object_type,
-            "Git object",
-            sep=">>",
-        )
+        try:
+            git_object.save()
+        except Exception as e:
+            logging.error(
+                f"Failed on count {count}.\nObject={git_object}\nObject Type={git_object.object_type}"
+            )
+
+            raise e
 
     count = 0
     for git_object in objects:
@@ -97,12 +72,12 @@ def save_objects(objects: List[GitObject]):
 def clone(git_url: str, location: str):
 
     git_url = convert_path_to_absolute(git_url)
-    # Create .git folder, raise error if it already exist
+    # # Create .git folder, raise error if it already exist
     discover_refs(git_url, "git-upload-pack")
     pack_location = get_pack(git_url, location)
+    # # print(pack_location, "Str")
     os.chdir(location)
     objects = unpack_pack_file(pack_location)
-    print(len(objects), "Object Length")
     save_objects(objects)
 
     #

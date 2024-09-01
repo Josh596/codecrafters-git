@@ -1,9 +1,11 @@
 import os
+import shutil
 
 from .constants import OBJECTS_DIR
 
 
 def init(parent_dir):
+    # os.mkdir(parent_dir)
     os.chdir(parent_dir)
     if os.path.exists(".git"):
         raise Exception("Directory is already a git repository")
@@ -37,7 +39,7 @@ def get_length(data):
     length_bytes_reversed = list(reversed(length_bytes))
     length_bits = "".join(length_bytes_reversed)
     length_object = int(length_bits, 2)
-    print(length_bits)
+    # print(length_bits)
     return len(length_bytes), length_object
 
 

@@ -3,9 +3,8 @@ import hashlib
 import os
 import zlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Type
-
-from typing_extensions import Self
 
 from .constants import OBJECTS_DIR
 from .utils import get_bit, get_length
@@ -25,7 +24,7 @@ class GitObject:
         self.length = length
         self.object_type = object_type
         self._name = ""
-        self.parent: Optional[Self] = None
+        self.parent: Optional["GitObject"] = None
         self.is_dir = False
 
     def hash(self):
@@ -33,12 +32,17 @@ class GitObject:
         sha1_hash = hashlib.sha1(header.encode() + self.content).hexdigest()
         return sha1_hash
 
+    def content_with_header(self):
+        header = f"{self.object_type} {len(self.content)}\0"
+
+        return header.encode() + self.content
+
     def write(self):
         sha_hash = self.hash()
-        compressed_content = zlib.compress(self.content)
+        compressed_content = zlib.compress(self.content_with_header())
 
         file_objects_dir = os.path.join(OBJECTS_DIR, sha_hash[:2])
-        os.mkdir(file_objects_dir)
+        os.makedirs(file_objects_dir, exist_ok=True)
         with open(os.path.join(file_objects_dir, sha_hash[2:]), "+wb") as object_file:
             object_file.write(compressed_content)
 
@@ -71,15 +75,17 @@ class GitObject:
         return path
 
     def save(self):
-
+        if self.parent and self.parent.object_type != "tree":
+            raise Exception("Only Tree Type can be parent")
         full_path = self.full_path()
-        print(full_path, "Full path")
         if not self.name:
             return
         if self.is_dir:
-            os.makedirs(full_path)
+            os.makedirs(full_path, exist_ok=True)
         else:
+            os.makedirs(str(Path(full_path).parent), exist_ok=True)
             # File mode to clear file first
+            # print(full_path, "Full path")
             with open(full_path, "wb") as file:
                 file.write(self.content)
 
@@ -164,7 +170,10 @@ class Blob(GitObject):
     ):
         super().__init__(content, index, length, "blob")
 
-    pass
+    def save(self):
+        if not self.parent:
+            raise Exception(f"Blob must have parent: {self.hash()}")
+        return super().save()
 
 
 class Tag(GitObject):
@@ -197,14 +206,14 @@ class GitRef(GitObject):
 
     @property
     def content(self):
-        print("==============Start=============\n")
+        # print("==============Start=============\n")
         # source_length_bytes, tells us the length of the variable_length_integer, source_length tells us it's value
         source_length_bytes, source_length = get_length(self._content)
         # print(source_length, self.base_object.length, "COmparsion of length")
         target_length_in_bytes, target_length = get_length(
             self._content[source_length_bytes:]
         )
-        print(source_length_bytes, target_length_in_bytes, "Bytees")
+        # print(source_length_bytes, target_length_in_bytes, "Bytees")
 
         data: bytes = self._content[source_length_bytes + target_length_in_bytes :]
 
@@ -248,24 +257,24 @@ class GitRef(GitObject):
                         value = 0
 
                     length = format(value, "08b") + length
-                print(offset, length, "Offset and Length", sep=">>>")
+                # print(offset, length, "Offset and Length", sep=">>>")
                 offset = int(offset, 2)
                 length = int(length, 2)
 
                 if length == 0:
                     length = int("0x10000", 16)
                     length = 65536
-                print(offset, length, "Offset and Length")
+                # print(offset, length, "Offset and Length")
                 output += self.base_object.content[offset : offset + length]
 
                 data = data[index:]
-        print(len(output), "Output Length")
-        print(
-            target_length,
-            len(output),
-            "COmparsion of Output length",
-        )
-        print("==============End=============\n")
+        # print(len(output), "Output Length")
+        # print(
+        #     target_length,
+        #     len(output),
+        #     "COmparsion of Output length",
+        # )
+        # print("==============End=============\n")
         return output
 
     @content.setter

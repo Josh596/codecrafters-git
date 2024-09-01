@@ -7,7 +7,7 @@ from binascii import unhexlify
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from clone.main import clone
+from .clone.main import clone
 
 OBJECTS_DIR = ".git/objects"
 
@@ -207,9 +207,8 @@ def main():
     elif command == "clone":
         git_url = sys.argv[2]
         dir = sys.argv[3]
-        TEST_GIT_URL = "https://github.com/Josh596/Weather-App.git"
-        TEST_GIT_URL = "https://gitlab.com/beku.skrillex/jp_project.git"
-        clone(git_url, dir)
+        os.makedirs(dir, exist_ok=True)
+        clone(git_url, str(Path(dir).absolute()))
     else:
         raise RuntimeError(f"Unknown command #{command}")
 

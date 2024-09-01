@@ -41,7 +41,6 @@ class PktLine:
         # Get length and convert to base16
         length = len(data) + 4
         length_b16 = hex(length).replace("0x", "00")
-        print(length_b16, "Lenth")
 
         data = f"{length_b16:04}{data}"
 
@@ -156,9 +155,7 @@ def get_pack(git_url: str, dir: str):
         "Transfer-Encoding": "chunked",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    # s = requests.Session()
     with urllib.request.urlopen(req) as response:
-        # print(r.headers)
         if response.status == 200:
             error_occured = False
             init(parent_dir=dir)
@@ -169,13 +166,13 @@ def get_pack(git_url: str, dir: str):
                 leftover = b""
                 acknowledgement = b""
                 # for chunk in r.iter_content(65520, decode_unicode=False)
-                while True:
+                response_text = response.read(65520)
+                while response_text:
                     chunk: bytes
-                    chunk = response.read(65520)
-                    if not chunk:
-                        break
-                    chunk = leftover + chunk
-                    leftover = b""
+                    # chunk = response_text
+                    chunk = response_text
+                    print("Chunking")
+                    # leftover = b""
                     if error_occured:
                         shutil.rmtree(os.path.join(dir, ".git"), ignore_errors=True)
                         break
@@ -186,12 +183,8 @@ def get_pack(git_url: str, dir: str):
                         if len(chunk) < 4:
                             leftover = chunk
                             break
-                        try:
-                            packet_length = int(chunk[:4], 16)
-                        except Exception as e:
-                            print(chunk)
-                            # print(output[-1]) if output else ""
-                            raise e
+
+                        packet_length = int(chunk[:4], 16)
 
                         if packet_length == 0:
                             leftover = b""
@@ -215,10 +208,12 @@ def get_pack(git_url: str, dir: str):
                             pack_file.write(data)
 
                         elif sideband == 2:
+                            print(f"Progesss: {data.decode('utf-8')}")
                             logging.info(
                                 f"Progesss: {data.decode('utf-8')}",
                             )
                         elif sideband == 3:
+                            print("Error")
                             logging.error(
                                 f"Error: {data.decode('utf-8')}",
                             )
@@ -226,6 +221,9 @@ def get_pack(git_url: str, dir: str):
                             break
                         output.append(data)
                         chunk = chunk[packet_length:]
+                        # chunk = leftover + response.read(65520)
+                    response_text = leftover + response.read(65520)
+                    leftover = b""
             return location
 
         else:
@@ -233,18 +231,15 @@ def get_pack(git_url: str, dir: str):
 
     raise Exception("Could not get pack file")
 
-    raise Exception("Could not get packfile")
-
 
 def unpack_pack_file(location: str) -> List[GitObject]:
-    print(location)
     objects: List[GitObject] = []
     with open(location, "rb") as pack_file:
         data = pack_file.read()
-
         # ======================= HEADER ==========================
         signature1 = data[:4]
         if signature1 != b"PACK":
+
             raise Exception("Invalid Pack File")
 
         version_number = int.from_bytes(data[4:8], "big")
@@ -264,7 +259,6 @@ def unpack_pack_file(location: str) -> List[GitObject]:
         # ======================= DECODING DATA ==========================
 
         unread_data = data[12:-20]
-        # print(len(unread_data), "Unread")
         while unread_data:
 
             length_bytes = []
@@ -275,10 +269,8 @@ def unpack_pack_file(location: str) -> List[GitObject]:
                 mask = 0b1111111
                 bits_count = 7
                 if index == 0:
-                    # print(byte_, bin(byte_))
                     d = byte_ & 0b1110000
                     d = d >> 4
-                    # print(d, bin(d), "D")
                     object_type = ObjectType.from_value(d)
                     mask = 0b1111
                     bits_count = 4
@@ -289,7 +281,6 @@ def unpack_pack_file(location: str) -> List[GitObject]:
 
             length_bytes = len(length_bytes)
 
-            # print(length_object, length_bits, b)
             content = unread_data[length_bytes:]
 
             if object_type not in [ObjectType.REF_DELTA, ObjectType.OFS_DELTA]:
@@ -318,7 +309,6 @@ def unpack_pack_file(location: str) -> List[GitObject]:
                 # DELTIFIED VERSIONS
                 if object_type == ObjectType.REF_DELTA:
                     name_base_object = content[:20].hex()
-                    print(name_base_object)
                     content = content[20:]
 
                     # Decompress content
@@ -332,9 +322,7 @@ def unpack_pack_file(location: str) -> List[GitObject]:
                     # Get parent object
                     for object in objects:
                         if object.hash() == name_base_object:
-                            print(object.hash())
                             index = objects[-1].index + objects[-1].length
-                            print("Hash found")
                             objects.append(
                                 object_type.create_object()(
                                     content=decompress_content,
@@ -374,6 +362,5 @@ def unpack_pack_file(location: str) -> List[GitObject]:
                     pass
 
             pass
-    print("All objects", len(objects), [object.object_type for object in objects])
 
     return objects
